@@ -1,0 +1,370 @@
+---
+title: "STATS 551 Project Report"
+author: 'Team 26: Suzy McTaggart, Avery Winn, Melody Wu'
+date: "Due April 19 2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(rstanarm)
+library(bayestestR)
+library(bayesplot)
+library(insight)
+```
+
+## Research Questions
+
+The overarching research question is—What do these popular songs have in common and why do people like these songs? We can narrow down to the following sub-questions:
+
+1) How do songs’ characteristics correlate with their popularity (with year as a potential random effect)?
+2) What are some of the most prevalent characteristics of the top 10 most popular songs in each year? In other words, what are some characteristics that can help predict whether a song will be a hit?
+3) What are the typical duration and beats per minute of the popular songs and how do these patterns change over time?
+
+
+#### Data
+
+```{r data}
+#The data was collected by Leonardo Henrique through the website “Organize Your Music” (Link). The documentation on the variables and how they are defined can be found on the Organize Your Music site. The list of 603 songs in the data set are the top songs of the years from 2010 to 2019, according to Billboard.
+
+read_csv("https://raw.githubusercontent.com/sbvsweeney/551Project/main/top10s.csv") %>%
+    select(ID, year, bpm, nrgy, dnce, dB, live, val, dur, acous, spch, pop) -> data
+
+head(data)
+
+train <- data[ which(data$year < 2019),]
+test <- data[which(data$year >2018),]
+
+head(train)
+```
+
+#### Exploratory Data Analysis
+```{r plots}
+# Beats per Minute Scatterplot and Histogram
+plot(train$bpm)
+hist(train$bpm)
+
+# Energy Scatterplot and Histogram
+plot(train$nrgy)
+hist(train$nrgy)
+
+# Danceability Scatterplot and Histogram
+plot(train$dnce)
+hist(train$dnce)
+
+# Loudness Scatterplot and Histogram
+plot(train$dB)
+hist(train$dB)
+
+# Liveness Scatterplot and Histogram (untransformed and log transformed)
+loglive<-log(train$live)
+
+plot(train$live)
+hist(train$live)
+
+hist(loglive)
+
+# Valence Scatterplot and Histogram
+plot(train$val)
+hist(train$val)
+
+# Duration Scatterplot and Histogram
+plot(train$dur)
+hist(train$dur)
+
+
+# Acousticness Scatterplot and Histogram (untransformed and log transformed)
+logacous<-log(train$acous)
+
+plot(train$acous)
+hist(train$acous)
+
+hist(logacous)
+
+
+# Speechiness Scatterplot and Histogram (untransformed and log transformed)
+logspch<-log(train$spch)
+
+plot(train$spch)
+hist(train$spch)
+
+hist(logspch)
+
+# Popularity Scatterplot and Histogram (untransformed and squared transformed)
+plot(train$pop)
+hist(train$pop)
+
+sqpop<-(train$pop)^2
+hist(sqpop)
+
+```
+
+### Analysis/Results
+
+#### Research Question 1: How do songs’ characteristics correlate with their popularity? [Bayesian Linear Regression]
+
+```{r blr-notranform}
+# Training Data
+lrt <- train[,c("bpm", "nrgy", "dnce", "dB", "live", "val", "dur", "acous", "spch", "pop")]
+
+# Square Transform on the outcome variable in the training set (popularity):
+sqtrp<-(lrt$pop)^2
+lrt$popsq <- sqtrp
+
+# Test Data
+lrtest <- test[,c("bpm", "nrgy", "dnce", "dB", "live", "val", "dur", "acous", "spch", "pop")]
+
+# Square Transform on the outcome variable in the testing set (popularity):
+sqtp<-(lrtest$pop)^2
+lrtest$popsq <- sqtp
+dim(lrtest)
+testn<-nrow(lrtest)
+
+# Fitting bayesian linear regression via stan.glm, using gaussian family with identity link to run as linear model -- NO TRANSFORMATION ON THE OUTCOME VARIABLE, 4 Markov chains with 2000 iterations
+blrnt<- stan_glm(pop~bpm + nrgy + dnce + dB + live + val + dur + acous + spch , family = gaussian(link = "identity"), data=lrt, algorithm="sampling",seed=551)
+blrnt
+
+attributes(blrnt)
+
+# Model Coefficients and Summary
+blrnt$coefficients
+summary(blrnt, prob=c(.025, .5, .975))
+
+# plotting training outcome to fitted values
+plot(lrt$pop, blrnt$fitted.values, ylim=c(55,75))
+
+# prior distribution used for model
+prior_summary(blrnt)
+
+# generating test fitted values via model (of note: predict function did not work as expected with this bayesian glm model and predict.glm generated an error)
+testfitnt<-blrnt$coefficients[1] + (blrnt$coefficients[2]*lrtest$bpm) + (blrnt$coefficients[3]*lrtest$nrgy) + (blrnt$coefficients[4]*lrtest$dnce) + (blrnt$coefficients[5]*lrtest$dB) + (blrnt$coefficients[6]*lrtest$live) + (blrnt$coefficients[7]*lrtest$val) + (blrnt$coefficients[8]*lrtest$dur) + (blrnt$coefficients[9]*lrtest$acous) + (blrnt$coefficients[10]*lrtest$spch)
+
+testfitnt
+
+# trying predict.glm function instead
+#predict.glm(blrnt,lrtest)
+
+# sanity check - same number of predictions as observations in the test set
+length(testfitnt)
+length(lrtest$pop)
+
+# plotting test set outcome to fitted values
+plot(lrtest$pop,testfitnt)
+
+# mean square error
+testresidnt<-lrtest$pop-testfitnt
+resqnt<-sum(testresidnt^2)
+msent<-resqnt/31
+msent
+```
+
+```{r blr-notranform2}
+# Fitting bayesian linear regression via stan.glm, using gaussian family with identity link to run as linear model -- NO TRANSFORMATION ON THE OUTCOME VARIABLE, 4 Markov chains with 2000 iterations
+blrnt2<- stan_glm(pop~ nrgy + dB, family = gaussian(link = "identity"), data=lrt, algorithm="sampling",seed=551)
+blrnt2
+
+
+# Model Coefficients and Summary
+blrnt2$coefficients
+summary(blrnt2, prob=c(.025, .5, .975))
+
+# plotting training outcome to fitted values
+plot(lrt$pop, blrnt2$fitted.values, ylim=c(55,75))
+
+# prior distribution used for model
+prior_summary(blrnt2)
+
+# generating test fitted values via model (of note: predict function did not work as expected with this bayesian glm model and predict.glm generated an error)
+testfitnt2<-blrnt2$coefficients[1] + (blrnt2$coefficients[2]*lrtest$nrgy) + (blrnt2$coefficients[3]*lrtest$dB)
+
+testfitnt2
+
+# trying predict.glm function instead
+#predict.glm(blrnt,lrtest)
+
+# sanity check - same number of predictions as observations in the test set
+length(testfitnt2)
+length(lrtest$pop)
+
+# plotting test set outcome to fitted values
+plot(lrtest$pop,testfitnt2)
+
+# mean square error
+testresidnt2<-lrtest$pop-testfitnt2
+resqnt2<-sum(testresidnt2^2)
+msent2<-resqnt2/31
+msent2
+```
+
+```{r blr-sqtransform, message=FALSE}
+# Fitting bayesian linear regression via stan.glm, using gaussian family with identity link to run as linear model -- SQUARE TRANSFORMATION ON THE OUTCOME VARIABLE, 4 Markov chains with 2000 iterations
+blr<- stan_glm(popsq~bpm + nrgy + dnce + dB + live + val + dur + acous + spch , family = gaussian(link = "identity"), data=lrt, algorithm="sampling",seed=551)
+blr
+
+# Model Coefficients and Summary
+blr$coefficients
+summary(blr, prob=c(.025, .5, .975))
+
+# plotting training outcome to fitted values
+plot(lrt$popsq, blr$fitted.values)
+
+# prior distribution used for model
+prior_summary(blr)
+
+# generating test fitted values via model 
+testfit<-blr$coefficients[1] + (blr$coefficients[2]*lrtest$bpm) + (blr$coefficients[3]*lrtest$nrgy) + (blr$coefficients[4]*lrtest$dnce) + (blr$coefficients[5]*lrtest$dB) + (blr$coefficients[6]*lrtest$live) + (blr$coefficients[7]*lrtest$val) + (blr$coefficients[8]*lrtest$dur) + (blr$coefficients[9]*lrtest$acous) + (blr$coefficients[10]*lrtest$spch)
+
+testfit
+
+# sanity check - same number of predictions as observations in the test set
+length(testfit)
+length(lrtest$popsq)
+
+# plotting test set outcome to fitted values
+plot(lrtest$popsq,testfit)
+
+# mean square error
+testresid<-sqrt(lrtest$popsq)-sqrt(testfit)
+resq<-sum(testresid^2)
+mse<-resq/31
+mse
+```
+
+```{r blr-sqtransform-fitting1}
+blr2<- stan_glm(popsq~nrgy + dnce + dB + live, family = gaussian(),data=lrt, algorithm="sampling", seed=551)
+blr2
+
+# Model Coefficients and Summary
+summary(blr2, prob=c(.025, .5, .975))
+
+# plotting training outcome to fitted values
+plot(lrt$popsq, blr2$fitted.values)
+
+# generating test fitted values via model 
+testfit2<-blr2$coefficients[1] + (blr2$coefficients[2]*lrtest$nrgy) + (blr2$coefficients[3]*lrtest$dnce) + (blr2$coefficients[4]*lrtest$dB) + (blr2$coefficients[5]*lrtest$live)
+
+testfit2
+
+# sanity check - same number of predictions as observations in the test set
+length(testfit2)
+length(lrtest$popsq)
+
+# plotting test set outcome to fitted values
+plot(lrtest$popsq,testfit2)
+
+# mean square error
+testresid2<-sqrt(lrtest$popsq)-sqrt(testfit2)
+resq2<-sum(testresid2^2)
+mse2<-resq2/31
+mse2
+
+```
+
+```{r blr-sqtransform-fitting2}
+blr3<- stan_glm(popsq~nrgy + dB, family = gaussian(),data=lrt, algorithm="sampling", seed=551)
+blr3
+
+# Model Coefficients and Summary
+summary(blr3, prob=c(.025, .5, .975))
+
+# plotting training outcome to fitted values
+plot(lrt$popsq, blr3$fitted.values)
+
+# generating test fitted values via model 
+testfit3<-blr3$coefficients[1] + (blr2$coefficients[2]*lrtest$nrgy) + (blr2$coefficients[3]*lrtest$dB)
+testfit3
+
+# sanity check - same number of predictions as observations in the test set
+length(testfit3)
+length(lrtest$popsq)
+
+# plotting test set outcome to fitted values
+plot(lrtest$popsq,testfit3)
+plot(sqrt(lrtest$popsq),sqrt(testfit3),xlab="Popularity (Test Set)", ylab="Fitted Value")
+abline(lm(sqrt(testfit3) ~ sqrt(lrtest$popsq)))
+
+# mean square error
+testresid3<-sqrt(lrtest$popsq)-sqrt(testfit3)
+resq3<-sum(testresid3^2)
+mse3<-resq3/31
+mse3
+
+```
+
+```{r blrplots}
+# Distribution of Model 3 coefficients
+
+mcmc_dens(blr3, pars = c("nrgy"))+
+  vline_at(-15.3, col="red") + vline_at(-24.5, col="blue") + vline_at(-5.9, col="blue")
+
+mcmc_dens(blr3, pars = c("dB"))+
+  vline_at(106.5, col="red") + vline_at(52.9, col="blue") + vline_at(160.5, col="blue")
+
+# Distribution of Model 1 coefficients
+
+mcmc_dens(blr, pars = c("bpm"))+
+  vline_at(2.0, col="red")
+
+mcmc_dens(blr, pars = c("nrgy"))+
+  vline_at(-20.0, col="red")
+
+mcmc_dens(blr, pars = c("dnce"))+
+  vline_at(7.6, col="red")
+
+mcmc_dens(blr, pars = c("dB"))+
+  vline_at(99.9, col="red")
+
+mcmc_dens(blr, pars = c("live"))+
+  vline_at(-6.9, col="red")
+
+mcmc_dens(blr, pars = c("val"))+
+  vline_at(1.1, col="red")
+
+mcmc_dens(blr, pars = c("dur"))+
+  vline_at(-2.0, col="red")
+
+mcmc_dens(blr, pars = c("acous"))+
+  vline_at(-4.8, col="red")
+
+mcmc_dens(blr, pars = c("spch"))+
+  vline_at(0.1, col="red")
+
+```
+
+```{r blrpost}
+# Description of Posterior Distibution - Model 3
+describe_posterior(blr)
+#describe_posterior(blr2)
+
+# Description of Posterior Distibution - Model 5 (Final Selected Model)
+describe_posterior(blr3)
+
+# Coefficients/Parameters of model posterior distribution - Model 3
+post <- get_parameters(blr)
+print(purrr::map_dbl(post,median),digits = 3)
+
+# Coefficients/Parameters of model posterior distribution - Model 5 (Final Selected Model)
+post <- get_parameters(blr3)
+print(purrr::map_dbl(post,median),digits = 3)
+
+# Highest Density Interval - Model 3
+hdi(blr)
+
+# Highest Density Interval - Model 5 (Final Selected Model)
+hdi(blr3)
+
+```
+
+#### What are some of the most prevalent characteristics of the top 10 most popular songs in each year?
+
+```{r}
+
+```
+
+#### What are the typical duration and beats per minute of the popular songs and how do these patterns change over time?
+
+```{r}
+
+```
