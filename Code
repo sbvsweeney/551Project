@@ -360,7 +360,228 @@ hdi(blr3)
 #### What are some of the most prevalent characteristics of the top 10 most popular songs in each year?
 
 ```{r}
+library(tidyverse)
+```
 
+### Exploratory Data Analysis
+
+```{r}
+songs = read.table("top10s.csv", sep = ",", header = TRUE)[,-1]
+head(songs)
+```
+
+```{r}
+ggplot(songs, aes(year)) + geom_bar() + ggtitle("Number of Songs from Each Year")
+```
+
+### Loading Data
+
+```{r}
+set.seed(551)
+songs = read.table("top10s.csv", sep = ",", header = TRUE)[,-1]
+songs = songs %>% group_by(year) %>%
+  mutate(rank = row_number()) %>% ungroup() %>%
+  mutate(top10 = as.factor(ifelse(rank <= 10, TRUE, FALSE))) %>% ungroup()
+songs$top10 = as.factor(songs$top10)
+colnames(songs) = c("Title", "Artist", "Genre", "Year", "BeatsPerMinute", "Energy", "Danceability",
+                    "Loudness", "Liveness", "Valence", "Duration",
+                    "Acousticness", "Speachiness", "Popularity", "Rank", "Top10")
+```
+
+```{r}
+# splitting into training and test sets
+train = songs %>% filter(Year != 2019) %>%
+  dplyr::select(-c(Title, Artist, Genre, Year, Rank, Popularity))
+test = songs %>% filter(Year == 2019) %>%
+  dplyr::select(-c(Title, Artist, Genre, Year, Rank, Popularity))
+```
+
+```{r}
+# creating distribution plots of each variable
+filter(train, Top10 == FALSE)[,-10] %>%
+  gather(metric, value) %>% 
+  ggplot(aes(value, fill = metric)) + 
+  geom_density(show.legend = FALSE) + 
+  facet_wrap(~ metric, scales = "free")
+```
+
+```{r}
+# pairwise correlation plot
+library(Hmisc)
+library(corrplot)
+cor = rcorr(as.matrix(train[,-10]), type = "pearson")
+corrplot(cor$r, type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+### Naive Bayes Classifier
+
+```{r}
+library(naivebayes)
+# initial NB fit without undersampling failures
+m1 = naive_bayes(top10 ~ ., data = train, usekernel = T) 
+```
+
+```{r}
+train_pred = predict(m1, train, type = "class")
+(train_error = table(train_pred, train$top10))
+mean(train_pred != train$top10)
+
+test_pred = predict(m1, test, type = "class")
+(test_error = table(test_pred, test$top10))
+mean(test_pred != test$top10)
+
+test_error / sum(test_error)
+```
+
+### Try Undersampling Unpopular Songs
+
+```{r}
+# only include top 40 songs for each year
+songs = read.table("top10s.csv", sep = ",", header = TRUE)[,-1]
+songs = songs %>% group_by(year) %>%
+  mutate(rank = row_number()) %>% ungroup() %>%
+  mutate(top10 = ifelse(rank <= 10, TRUE, FALSE)) %>%
+  filter(rank <= 40)
+  
+songs$top10 = as.factor(songs$top10)
+train = songs %>% filter(year != 2019) %>%
+  dplyr::select(-c(title, artist, top.genre, year, rank, pop))
+test = songs %>% filter(year == 2019) %>%
+  dplyr::select(-c(title, artist, top.genre, year, rank, pop))
+```
+
+```{r}
+library(naivebayes)
+nb1 = naive_bayes(top10 ~ ., data = train, usekernel = T) 
+```
+
+```{r}
+# training and test errors for naive bayes with raw predictors
+train_pred = predict(nb1, train, type = "class")
+(train_error = table(train_pred, train$top10))
+mean(train_pred != train$top10)
+
+test_pred = predict(nb1, test, type = "class")
+(test_error = table(test_pred, test$top10))
+mean(test_pred != test$top10)
+
+test_error / sum(test_error)
+```
+
+### Logistic Regression
+
+```{r}
+train$top10 = ifelse(train$top10 == TRUE, 1, 0)
+lr1 = glm(top10 ~ ., data = train, family = "binomial")
+train_pred = predict(lr1, train, type = "response")
+```
+
+
+```{r}
+# training and test errors for logistic regression with raw predictors
+train_pred = predict(lr1, train, type = "response") > 0.5
+(train_error = table(train_pred, train$top10))
+mean(train_pred != train$top10)
+
+test_pred = predict(lr1, test, type = "response") > 0.5
+(test_error = table(test_pred, test$top10))
+mean(test_pred != test$top10)
+
+test_error / sum(test_error)
+```
+
+### Centering Values by Year
+
+```{r}
+# creating dataframe with centered predictors
+songs = read.table("top10s.csv", sep = ",", header = TRUE)[,-1] %>% group_by(year) %>%
+  mutate(rank = row_number()) %>% ungroup() %>%
+  mutate(top10 = as.factor(ifelse(rank <= 10, TRUE, FALSE))) %>% ungroup()
+songs$top10 = as.factor(songs$top10)
+centered = songs %>% group_by(year) %>%
+  mutate(bpm_ct = bpm - mean(bpm),
+         nrgy_ct = nrgy - mean(nrgy),
+         dnce_ct = dnce - mean(dnce),
+         dB_ct = dB - mean(dB),
+         live_ct = live - mean(live),
+         val_ct = val - mean(val),
+         dur_ct = dur - mean(dur),
+         acous_ct = acous - mean(acous),
+         spch_ct = spch - mean(spch)) %>% ungroup()
+centered = centered[,c(4,16:ncol(centered))]
+centered$top10 = as.factor(centered$top10)
+colnames(centered) = c("Year", "Top10", "BeatsPerMinute", "Energy", "Danceability",
+                    "Loudness", "Liveness", "Valence", "Duration",
+                    "Acousticness", "Speachiness")
+```
+
+```{r}
+train = centered %>% filter(Year != 2019)
+test = centered %>% filter(Year == 2019)
+```
+
+```{r}
+library(naivebayes)
+nb2 = naive_bayes(top10 ~ ., data = train, usekernel = T) 
+```
+
+```{r}
+# training and test errors for naive bayes with centering
+train_pred = predict(nb2, train, type = "class")
+(train_error = table(train_pred, train$top10))
+mean(train_pred != train$top10)
+
+test_pred = predict(nb2, test, type = "class")
+(test_error = table(test_pred, test$top10))
+mean(test_pred != test$top10)
+
+test_error / sum(test_error)
+```
+
+```{r}
+# centered distributions
+train[,-c(1,2)] %>%
+  gather(metric, value) %>% 
+  ggplot(aes(value, fill = metric)) + 
+  geom_density(show.legend = FALSE) + 
+  facet_wrap(~ metric, scales = "free")
+```
+
+```{r}
+train$top10 = ifelse(train$top10 == TRUE, 1, 0)
+lr2 = glm(top10 ~ ., data = train, family = "binomial")
+train_pred = predict(lr2, train, type = "response")
+```
+
+```{r}
+# training and test errors for logistic regression with centering
+train_pred = predict(lr2, train, type = "response") > 0.5
+(train_error = table(train_pred, train$top10))
+mean(train_pred != train$top10)
+
+test_pred = predict(lr2, test, type = "response") > 0.5
+(test_error = table(test_pred, test$top10))
+mean(test_pred != test$top10)
+
+test_error / sum(test_error)
+```
+
+```{r}
+summary(lr1)
+summary(lr2)
+```
+
+```{r}
+ggplot(train, aes(spch_ct, dur_ct)) + geom_point(aes(color = as.factor(top10)))
+```
+
+```{r}
+songs %>% group_by(year) %>%
+  summarize(mean(dur))
+```
+
+```{r}
+songs %>% filter(year == 2011, dur > 224, dur < 242)
 ```
 
 #### What are the typical duration and beats per minute of the popular songs and how do these patterns change over time?
