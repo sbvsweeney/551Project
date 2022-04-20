@@ -586,430 +586,224 @@ songs %>% filter(year == 2011, dur > 224, dur < 242)
 
 #### What are the typical duration and beats per minute of the popular songs and how do these patterns change over time?
 
-```{r read-in}
-songs = read.csv('top10s.csv')
-str(songs)
-songs = songs %>% 
-  select(-X) %>%
-  filter(year <= 2018) %>% rename(genre = top.genre)
-metrics = colnames(songs)[5:14]
-
-songs_to_long = function(data = songs){
-  # Wrapper function
-  # Pivot to long format on metrics vars only (numeric, excluding year)
-  pivot_longer(data, cols=5:14,
-               names_to='metric', values_to='value')
-}
-songs_long = songs_to_long()
-str(songs_long)
-```
-
-```{r plotting-scales}
-# Reusable scales for ggplot
-year_scale_discrete = scale_x_discrete('Year',
-                                       breaks=as.factor(seq(2010, 2018, 2)),
-                                       label=seq(2010, 2018, 2))
-year_scale_continuous = scale_x_discrete('Year',
-                                         breaks=seq(2010, 2018, 2),
-                                         label=seq(2010, 2018, 2))
-```
-
-```{r smooth-all}
-# KDEs for all numerical variables (faceted)
-ggplot(songs_long) +
-  geom_smooth(aes(year, value)) +
-  facet_wrap(vars(metric))
-```
-
-```{r, fig.width=6, fig.height=18}
-# Boxplot of all numerical variables by year
-ggplot(songs_long) +
-  geom_boxplot(aes(group=year,
-                      y = value, x=year)) +
-  facet_grid(rows=vars(metric), scales='free_y') +
-  scale_x_continuous('Year',
-                     breaks = 2010:2018,
-                     labels = 2010:2018,
-                     sec.axis = dup_axis())
-```
-
-There definitely seem to be some zero values that need to be excluded, although some of these may actually be valid.
-
-```{r clean-songs-1}
-# We will remove this one observation, since all the values seem invalid
-songs %>% filter(dB<=-40)
-songs = songs %>% filter(title != 'Million Years Ago')
-songs_long = songs_to_long(songs)
-```
-
-```{r, fig.width=6, fig.height=18}
-ggplot(songs_long) +
-  geom_boxplot(aes(group=year,
-                      y = value, x=year)) +
-  facet_grid(rows=vars(metric), scales='free_y') +
-  scale_x_continuous('Year',
-                     breaks = 2010:2018,
-                     labels = 2010:2018,
-                     sec.axis = dup_axis())
-```
-
-There are still several zero values for `pop` although these might be valid.
-
-```{r clean-songs-2}
-songs %>% filter(pop<=0.1)
-# Leave these in for now I guess
-```
-
-```{r smooth-dur-bpm}
-# KDEs for bpm and duration only
-ggplot(songs_long %>% filter(metric %in% c('bpm', 'dur'))) +
-  geom_smooth(aes(year, value)) +
-  facet_grid(rows=vars(metric), scales='free_y') +
-  theme(aspect.ratio=0.6)
-```
-
-`val`, `bpm`, `dur`, `dB`, `dnce`, and `nrgy` seem relevant to our interests.
-
-```{r boxplot-hype, fig.width=6, fig.height=8}
-plot.vars = sort(c('val', 'bpm', 'dur', 'dB', 'dnce', 'nrgy'))
-
-p = ggplot(songs_long %>%
-         filter(metric %in% plot.vars)) +
-  geom_boxplot(aes(group=year,
-                      y = value, x=year)) +
-  facet_wrap(vars(as.factor(metric)), scales='free_y') +
-  scale_x_continuous('Year',
-                     breaks = 2010:2018,
-                     labels = 2010:2018,
-                     sec.axis = dup_axis())
-
-p + geom_segment(data = ggplot_build(p)$data[[1]] %>%
-                   mutate(metric = factor(PANEL, labels=plot.vars)),
-                 aes(x=xmin, xend=xmax, y=middle, yend=middle),
-                 colour="red", size=1.5) +
-  facet_wrap(vars(as.factor(metric)),
-             scales='free_y',
-             ncol=2)
-
-ggplot_build(p)$data[[1]] %>% str
-with(ggplot_build(p)$data[[1]], factor(PANEL, labels=plot.vars))
-```
-
-Duration and dB don't seem particularly interesting, so we'll focus on the remaining four plotted above.
-
-```{r}
-plot.vars = sort(c('val', 'bpm', 'dnce', 'nrgy'))
-```
-
-
-```{r hype-KDE, fig.width=6, fig.height=8}
-ggplot(songs_long %>%
-         filter(metric %in% c('bpm', 'dur', 'dB', 'dnce', 'nrgy', 'val'))) +
-  geom_smooth(aes(y = value, x=year)) +
-  facet_grid(rows=vars(metric), scales='free_y') +
-  scale_x_continuous('Year',
-                     breaks = 2010:2018,
-                     labels = 2010:2018,
-                     sec.axis = dup_axis())
-```
-
-```{r, eval=FALSE}
-unique(songs$genre)
-
-# Rock and "indie" are classed as pop
-# Rap is classed as hip hop
-# Hollywood, contemporary country, and Irish singer-songwriter
-#   are classed as other
-songs = songs %>%
-  mutate(genre_cat =
-           map_chr(genre,
-                   ~switch(.,
-                           "neo mellow" = 'soul rnb',
-                           "detroit hip hop" = 'hip hop',          
-                           "dance pop" = 'pop',
-                           "pop" = 'pop',                      
-                           "canadian pop" = 'pop',
-                           "hip pop" = 'hip hop',                  
-                           "barbadian pop" = 'pop',
-                           "atl hip hop" = 'hip hop',              
-                           "australian pop" = 'pop',
-                           "indie pop" = 'pop',                
-                           "art pop" = 'pop',
-                           "colombian pop" = 'pop',            
-                           "big room" = 'electronica',
-                           "british soul" = 'soul rnb',             
-                           "chicago rap" = 'hip hop',
-                           "acoustic pop" = 'pop',             
-                           "permanent wave" = 'electronica',
-                           "boy band" = 'pop',                 
-                           "baroque pop" = 'pop',
-                           "celtic rock" = 'pop',              
-                           "electro" = 'electronica',
-                           "complextro" = 'electronica',               
-                           "canadian hip hop" = 'hip hop',
-                           "candy pop" = 'pop',                
-                           "alaska indie" = 'pop',
-                           "folk-pop" = 'pop',                 
-                           "metropopolis" = 'pop',
-                           "house" = 'electronica',                    
-                           "australian hip hop" = 'hip hop',
-                           "electropop" = 'pop',               
-                           "australian dance" = 'electronica',
-                           "hollywood" = 'other',                
-                           "canadian contemporary r&b" = 'soul rnb',
-                           "irish singer-songwriter" = 'other',  
-                           "tropical house" = 'electronica',
-                           "belgian edm" = 'electronica',              
-                           "french indie pop" = 'pop',
-                           "hip hop" = 'hip hop',                  
-                           "danish pop" = 'pop',
-                           "latin" = 'latin',                    
-                           "canadian latin" = 'latin',
-                           "electronic trap" = 'electronica',          
-                           "edm" = 'electronica',
-                           "electro house" = 'electronica',            
-                           "downtempo" = 'electronica',
-                           "brostep" = 'electronica',                  
-                           "contemporary country" = 'other',
-                           "moroccan pop" = 'pop')),
-         .after = genre)
-```
-
-Problem: way too many in the pop category, as I should have expected
-
-```{r}
-# songs %>% group_by(genre_cat) %>% count
-```
-
-
-```{r K-means}
-# Get the median values for all metrics on each genre
-genre_medians = songs %>%
-  group_by(genre) %>%
-  summarize(across(all_of(metrics), median)) %>%
-  column_to_rownames(var='genre')
-
-genre_kmeans = kmeans(genre_medians, 4)
-fitted(genre_kmeans, 'classes') %>% sort
-
-fviz_nbclust(genre_medians, kmeans, method='wss')
-fviz_cluster(genre_kmeans, data = genre_medians, repel=TRUE)
-```
-
-```{r}
-save(songs, year_scale_continuous, year_scale_discrete,
-     metrics, plot.vars, songs_to_long,
-     file = 'EDA-data.Rdata')
-```
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
 library(tidyverse)
+library(glue)
 library(aTSA)
+library(mvtnorm)
+library(greta)
+library(bayesplot)
 load('EDA-data.Rdata')
 ```
 
+
+##############################################################
+#### Switch between fast vs. good version of Avery's code ####
 ```{r}
-(loaded_data = names(as.list(.GlobalEnv)))
+slow = FALSE
+if(!slow) { warning('`slow` is set to FALSE: plots and model summaries will not be reliable') }
 ```
 
-It seems like it could be interesting to investigate bpm first.
-
-```{r}
-# We'll randomly sample 35 observations from each year to simplify computation for the acf
-songs %>% count(year)
-songs_short = songs %>%
-  group_by(year) %>% slice_sample(n = 35) %>% ungroup %>%
-  arrange(year)
+```{r load-data}
+Songs = read.csv('top10s.csv') %>%
+  select(-X) %>%
+  mutate(year = year - 2009)
 ```
 
 
-```{r}
-# Check ACF for bpm
-acf(songs %>% group_by(year) %>%
-      summarize(mean_bpm = mean(bpm)) %>% select(mean_bpm),
-    frequency=35)
+```{r function-definitions}
+plot_beta = function(a, b){
+  # plot a beta density (for convenience when choosing prior)
+  beta.param = c(a,b)
+  d = data.frame(x = seq(0, 1, by=0.01)) %>%
+    mutate(y = dbeta(x, beta.param[1], beta.param[2]))
+  ggplot(d, aes(x,y)) + geom_line()
+}
 
-# For nrgy
-acf(songs %>% group_by(year) %>%
-      summarize(mean_nrgy = mean(nrgy)) %>% select(mean_nrgy))
 
-# For dnce
-acf(songs %>% group_by(year) %>%
-      summarize(mean_dnce = mean(dnce)) %>% select(mean_dnce))
+summary_logis = function(s) {
+  # Takes mcmc summary object as argument and applies inverse logit to all values
+  s$statistics  = s$statistics %>%
+    data.frame %>%
+    mutate(SD_below = Mean - SD,
+           SD_above = Mean + SD,
+           N_SE_below = Mean - Naive.SE,
+           N_SE_above = Mean + Naive.SE,
+           TS_SE_below = Mean - Time.series.SE,
+           TS_SE_above = Mean - Time.series.SE) %>%
+    mutate(across(everything(), plogis)) %>%
+    mutate(SD = (SD_above-SD_below)/2,
+           Naive.SE = (N_SE_above-N_SE_below)/2,
+           Time.Series.SE = (TS_SE_below-TS_SE_above)/2)
+  s$quantiles = s$quantiles %>% plogis %>% data.frame
+  colnames(s$quantiles) = as.character(c('Q.025', 'Q.25', 'Q.5', 'Q.75', 'Q.975'))
+  return(s)
+}
 
-# For valence
-acf(songs %>% group_by(year) %>%
-      summarize(mean_val = mean(val)) %>% select(mean_val))
+
+plot_posterior = function(sim, is.df = FALSE, logit = TRUE,
+                          vars = NULL, plot = TRUE) {
+  # sim: the output of greta::mcmc
+  # is.df: whether sim is a data frame as returned by plot_posterior
+  # vars: Which variables should be plotted? Defaults to all
+  # plot: plot the posterior, or just return the data frame for plotting?
+  
+  if(logit==FALSE) {return(NA)}
+  
+  if(is.df) {sim.df = sim}
+  else{ 
+    names(sim) = NULL
+    sim.df = imap_dfr(sim,
+                      ~(.x %>% plogis %>% data.frame %>%
+                          rownames_to_column(var='step') %>%
+                          mutate(chain=.y, .before=everything()))) %>%
+      rename_with(~str_replace(., '\\.$', '')) %>%
+      pivot_longer(cols = c(-chain, -step),
+                   names_to = 'param', values_to = 'Value') %>%
+      separate(param, into=c('Parameter', 'Year', 'metric'), sep='\\.') %>%
+      mutate(Year = as.numeric(Year) + 2009,
+             metric = factor(metric, labels = metrics3),
+             Metric = factor(metric,
+                             labels = c('Danceability', 'Energy', 'Valence')))
+    if(!is.null(vars)) {
+      sim.df %>% filter(Parameter %in% vars)
+    }
+    if(!plot) {return(sim.df)}
+  }
+  
+  ggplot(sim.df, aes(group=Year, x=Year, y=Value)) +
+    geom_violin() +
+    scale_x_continuous('Year',
+                       breaks = 2010:2019,
+                       labels = 2010:2019,
+                       sec.axis = dup_axis()) +
+    facet_grid(rows=vars(Metric), scales='free_y') +
+    labs(title=glue('Posterior distribution for {ifelse(is.null(vars), unique(sim.df$Parameter), vars)}'))
+}
+
+
+write_pdf = function(plot_name) {
+  # Write a plot to pdf
+  # plot_name: a string specifying the object to be plotted
+  file_name = paste0('figures/', plot_name, '.pdf')
+  pdf(file_name)
+  plot(eval(str2expression(plot_name)))
+  dev.off()
+}
+
 ```
-
-The ACF plots for bpm and energy have a fairly similar pattern, although there aren't significant autocorrelations for the year-dependent means of either variable in this very underpowered assessment.
-
-Looking back at the scatterplots, it appears that the covariance structure between dnce, nrgy, and val can be exploited in construtructing a hierarchical model 
-
-```{r}
-# Check scatterplots again with just these four variables
-plot(songs %>% select(plot.vars))
-```
-
-### Testing out greta
-
-```{r}
-library(greta)
-```
-
-```{r}
-ones(3,3)
-?greta::operators
-library(bayesplot)
-```
-
-### Time series
-
-```{r data-setup}
-metrics4 = c('bpm', 'dnce', 'nrgy', 'val')
-
-# yr is variable for shifted year
-songs = songs %>% mutate(yr = year-2010)
-
-# Means by year
-means = songs %>%
-  group_by(yr) %>%
-  summarize(across(metrics, mean))
-# sd2010 = songs %>% filter(yr==2010) %>%
-#   summarize(across(all_of(metrics), sd))
-
-# means_long = left_join(songs, means, by='yr', suffix=c('', '_mean')) %>%
-#     select(ends_with('_mean')) %>% rename_with(~gsub('_mean', '', .))
-# sd2010_long = left_join(songs, sd2010, by='yr', suffix=c('', '_sd2010')) %>%
-#   select(ends_with('_sd2010'))
-# lagged_means = means %>% summarize(across(yr),
-#                                    across(-yr,
-#                                   ~c(NA, .)[row_number()],
-#                                   .names= '{.col}_lag1'))
-
-# Subtract off mean for 2010, divide by standard deviation across all years
-songs_std = songs %>%
-  mutate(across(metrics, ~(.-means[[1, cur_column()]]) / sd(.)))
-# Compute means of standardized metrics by year
-means_std = songs_std %>% group_by(yr) %>% summarize(across(metrics, mean))
-```
-
-Prior formulation:
-\begin{align*}
-\mu &\sim N(0, 2)\\
-\beta_{yr} &\sim N(0,1)
-\end{align*}
-
-We standardize the observed metrics, so we can use the correlation matrix for 2018 as a point estimate for the overall covariance matrix. This lets us use data we otherwise would not be able to use effectively in the model fitting, since the covariates are lagged.
-
-```{r time-series-1}
-# Trim down to only the four metrics for now
-met = metrics4
-
-# Matrix of individual song observations
-M = cbind(int = 1, select(songs_std, yr, met))
-p = ncol(M)
-# Matrix without year or intercept
-M_met = select(songs_std, met)
-M_met18 = M_met[M$yr==8,] # 2018 only
-
-# Design matrix (by-year means)
-X = cbind(int = 1, means_std) %>% select(yr, met)
-# Matrix of differences
-D = as_data(X[-1,-1] - X[-9,-1])
-
-df_Sigma = 30  # Degrees of freedom for esimating covariance from 2018
-# Prior estimate for the covariance matrix 
-Lambda0 = solve( cov(M_met) )
-Lambda_met = wishart(df_Sigma, (1/df_Sigma) * Lambda0)
-Lambda_err = wishart(df_Sigma, (2/df_Sigma) * Lambda0)
-# Sigma0[3:p, 3:p] = cor(X_metrics_8)
-# Sigma0[3:p, 2] <- Sigma0[2, 3:p] <- 0
-
-beta_yr = normal(0,1)
-beta_met = 2*beta(3, 2, dim=3) - 1
-
-hist(songs_std %>% filter(yr==0) %>% pull(bpm))
-ggplot(data = songs_std, aes(x = bpm, y = dnce)) +
-  geom_point() +
-  geom_point(data = means_std, color='red')
-
-songs %>% count(year) %>% summarize(mean(n))
-```
-
-
-
-```{r}
-# beta.param = c(3,2)
-# d = data.frame(x = seq(-1, 1, by=0.01)) %>%
-#   mutate(y = dbeta((x+1)/2, beta.param[1], beta.param[2]))
-# ggplot(d, aes(x,y)) + geom_line()
-#   qbeta(.5,3,2)*2-1
-```
-
-```{r}
-# b = matrix(rnorm(160), ncol=4)
-# s = cbind(c(1,rep(0,4)), rbind(0, t(b)%*%b))
-# sqrt(s)
-# solve(s)
-```
-
 
 ### Heirarchical Bayes
 
-Will not use an trend term for year.
+#### Logistic: Sigma_i = Sigma, with mu_i's random
 
-```{r hierarchical-setup}
-# Re-make songs dataframe including 2018
-# Years will be expressed as years since 2010, one-indexed
-Songs = read.csv('top10s.csv')
-Songs = Songs %>% select(-X) %>% mutate(year = year-2009)
+```{r model-definition}
+# Set up the hierarchical model with logistic transformation
 
-n = nrow(Songs)
-k = length(unique(Songs$year))
-
-X.df = Songs %>% select(year, metrics4)
-X = X.df %>% select(-year) %>% as_data
-Xbar = X.df %>% summarize(across(metrics4, mean))
+metrics3 = c('dnce', 'nrgy', 'val')
+X.df = Songs %>%
+  select(year, metrics3) %>%
+  mutate(across(metrics3, ~(./100))) %>%
+  mutate(across(metrics3, qlogis)) %>% #LOGISTIC
+  filter(if_all(metrics3, is.finite))
+X.mat = X.df %>% select(-year) %>% as.matrix
+X = X.mat %>% as_data
+Xbar = X.df %>% summarize(across(metrics3, mean))
 Xbar_i = X.df %>% group_by(year) %>%
-  summarize(across(metrics4, mean)) %>% select(-year) %>% as_data
+  summarize(across(metrics3, mean)) %>% select(-year)
 
-m_Sigma = 50
-Psi0 = solve((1/n)*t(X)%*%X)
-# Psi = solve(var(X)) %>% as_data
-# distribution(Psi) = wishart(1, Psi0)
-Psi = wishart(1, Psi0)
-Sigma = solve(Psi)
+p = ncol(X)
+n = nrow(X)
 
-Psi_i0 = map(unique(Songs$year),
-            ~((1/sum(Songs$year==.x))*
-                t(X[Songs$year==.x,])%*%X[Songs$year==.x,] %>% solve))
-Psi_i = map(unique(Songs$year),
-            ~wishart(m_Sigma, m_Sigma*Psi))
+n0 = t(rep(10,p)) # Scales population variance prior estimate
+m0 = 6 # Degrees of freedom for sampling Sigma from prior
+N0 = 10  # Degrees of freedom for sampling mu from prior
+rho0 = 0.2*matrix(1, nrow=p, ncol=p) + 0.8*base::diag(p) # Prior correlation matrix
+m_i = 50 # Degrees of freedom for drawing Sigma_i from Sigma
+n_i = 10 # Degrees of freedom for drawing mu_i from mu | Sigma_i
 
-Theta = multivariate_normal(zeros(10,4), solve(Psi),
-                            dim=4, n_realisations=k) # k x 4
+mu0_raw = rep(0.6, 3)  # Prior global mean estimate
+mu0 = qlogis(mu0_raw)  # (Transformed)
 
-# mu = Xbar %>% as_data
-# distribution(mu) = multivariate_normal(Xbar, (1/n)*solve(Psi), dim=4)
-mu = multivariate_normal(t(colMeans(X)), (1/n)*solve(Psi), dim=4)
+sigma0 = (  # Prior estimate of population variance
+  qlogis( mu0_raw + sqrt((1/n0)*mu0_raw*(1-mu0_raw)) )/2 -
+  qlogis( mu0_raw - sqrt((1/n0)*mu0_raw*(1-mu0_raw)) )/2)^2
+Sigma0 = rho0 * sqrt(t(sigma0)%*%sigma0) # Population covariance prior estimate
 
-epsilon = zeros(n, 4)
+# Population covariance and global mean
+Sigma = wishart(m0, 1/m0 * Sigma0)
+mu = multivariate_normal(t(mu0), 1/N0 * Sigma, dim=3)
 
-Theta_effect = model.matrix(~as.factor(year), Songs)%*%Theta
+# Covariance and mean by year
+Sigma_i = Sigma  # Covariance for year i
+mu_i = multivariate_normal(mu, 1/n_i * Sigma_i, n_realisations=10)
 
-EX = ones(n)%*%mu + Theta_effect
-distribution(X) = multivariate_normal(EX, Psi, dim=4, n_realisations=n)
+distribution(X) = multivariate_normal(mu_i[X.df$year,], Sigma_i, n_realisations = n)
 ```
 
-```{r}
-model1 = model(mu, Theta, Psi)
-model2 = model(mu)
+```{r find-seed}
+# The initial value implementation in greta is awful, so it's easiest to just
+#   try a bunch of seeds until one doesn't produce NaNs. CANNOT use GPU
+
+
+good_seed = 1  # I believe 1 is an appropriate seed for the final model
+binom3 = model(mu_i)
+for(i in 1:ifelse(slow, 500, 50)) {
+  tryCatch({
+      tensorflow::use_session_with_seed(i, disable_gpu=TRUE,
+                                             disable_parallel_cpu=FALSE)
+      b_sim3 = mcmc(binom3, n_samples = 1000, warmup=1000,
+                    chains=4, one_by_one=TRUE, sampler=rwmh(), thin=1, verbose=FALSE)
+      # save(b_sim3, file='models/b_sim3_2.Rdata')
+      # write_pdf('b_sim3')
+      good_seed = i
+      break()
+    },
+    error=function(e){cat("ERROR :",conditionMessage(e), "\n")}
+  )
+}
 ```
 
-```{r eval=FALSE}
-# Need to fix tensorflow bug
-init = replicate(4, initials(mu = as_data(Xbar+rnorm(4, 0, 3))), simplify=FALSE)
-sim1 = mcmc(model2, n_samples = 100, warmup=100, initial_values=init)
+```{r best-mcmc}
+# Fully implement best model
+
+binom4 = model(mu, mu_i)
+tensorflow::use_session_with_seed(1, disable_gpu=TRUE,
+                                  disable_parallel_cpu=FALSE)
+b_sim4 = mcmc(binom4,
+              n_samples = ifelse(slow, 20000, 1000),
+              warmup = ifelse(slow, 10000, 1000),
+              chains=4, one_by_one=FALSE,
+              sampler=rwmh(), thin=2, verbose=TRUE)
+b_sim4_sm = summary_logis(summary(b_sim4))
+save(b_sim4, file='models/b_sim4.Rdata')
+write_pdf('b_sim4')
 ```
+
+```{r posterior-violin}
+# Make faceted violin plot of posterior distributions by year and metric
+
+quant.df = b_sim4_sm$quantiles %>%
+  rownames_to_column('param') %>%
+  mutate(param = str_replace(param, '\\]', '')) %>%
+  separate(param, into=c('Parameter', 'Year'), sep='\\[') %>%
+  separate(Year, into=c('Year', 'metric'), sep='\\,') %>%
+  filter(Parameter != 'mu' ) %>%
+  mutate(Year = as.numeric(Year) + 2009,
+         metric = factor(metric, labels = metrics3),
+         Metric = factor(metric,
+                         labels = c('Danceability', 'Energy', 'Valence')))
+
+p = plot_posterior(b_sim4, vars='mu_i')
+(p =  p + labs(title = 'Song metric means by year',
+               y = '') +
+    geom_linerange(data = quant.df,
+                   aes(ymin = Q.025, y = Q.5, ymax = Q.975),
+                   size=0.8,
+                   color='tomato3'))
+if(!slow) { warning('`slow` is set to FALSE: plots and model summaries will not be reliable') }
+ggsave('figures/b_sim4_violin_2.pdf', plot = p, height = 5, width = 7)
+```
+
